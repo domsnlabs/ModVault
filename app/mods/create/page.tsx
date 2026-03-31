@@ -15,7 +15,8 @@ import {
   Check,
   ChevronDown,
   Loader2,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Link as LinkIcon
 } from 'lucide-react'
 import { Category } from '@/lib/types'
 
@@ -53,12 +54,21 @@ export default function CreateModPage() {
   // Files
   const [modFile, setModFile] = useState<File | null>(null)
   const [iconFile, setIconFile] = useState<File | null>(null)
+  const [bannerFile, setBannerFile] = useState<File | null>(null)
   const [iconPreview, setIconPreview] = useState<string | null>(null)
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  
+  // Download option
+  const [downloadType, setDownloadType] = useState<'upload' | 'link'>('upload')
+  const [externalUrl, setExternalUrl] = useState('')
   
   // Dropdowns
   const [showVersionDropdown, setShowVersionDropdown] = useState(false)
   const [showLoaderDropdown, setShowLoaderDropdown] = useState(false)
+  
+  // Check if resource pack (loaders not required)
+  const isResourcePack = categories.find(c => c.id === categoryId)?.slug === 'resource-packs'
   
   useEffect(() => {
     Promise.all([
@@ -78,6 +88,16 @@ export default function CreateModPage() {
       setIconFile(file)
       const reader = new FileReader()
       reader.onloadend = () => setIconPreview(reader.result as string)
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const handleBannerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setBannerFile(file)
+      const reader = new FileReader()
+      reader.onloadend = () => setBannerPreview(reader.result as string)
       reader.readAsDataURL(file)
     }
   }
@@ -122,11 +142,17 @@ export default function CreateModPage() {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '')
+      + '-' + Date.now().toString(36)
   }
 
   const handleSubmit = async () => {
-    if (!modFile) {
-      alert('Please upload a mod file')
+    // Validate
+    if (downloadType === 'upload' && !modFile) {
+      alert('Please upload a file')
+      return
+    }
+    if (downloadType === 'link' && !externalUrl) {
+      alert('Please enter a download URL')
       return
     }
     
@@ -142,11 +168,28 @@ export default function CreateModPage() {
           method: 'POST',
           body: iconFormData
         })
-        const iconData = await iconRes.json()
-        iconUrl = iconData.pathname
+        if (iconRes.ok) {
+          const iconData = await iconRes.json()
+          iconUrl = iconData.pathname
+        }
       }
 
-      // 2. Create the mod
+      // 2. Upload banner if provided
+      let bannerUrl = null
+      if (bannerFile) {
+        const bannerFormData = new FormData()
+        bannerFormData.append('file', bannerFile)
+        const bannerRes = await fetch('/api/upload', {
+          method: 'POST',
+          body: bannerFormData
+        })
+        if (bannerRes.ok) {
+          const bannerData = await bannerRes.json()
+          bannerUrl = bannerData.pathname
+        }
+      }
+
+      // 3. Create the mod
       const slug = generateSlug(title)
       const modRes = await fetch('/api/mods', {
         method: 'POST',
@@ -157,18 +200,19 @@ export default function CreateModPage() {
           description,
           body,
           category_id: categoryId || null,
-          icon_url: iconUrl
+          icon_url: iconUrl,
+          banner_url: bannerUrl
         })
       })
       
       if (!modRes.ok) {
         const error = await modRes.json()
-        throw new Error(error.error || 'Failed to create mod')
+        throw new Error(error.error || 'Failed to create project')
       }
       
       const mod = await modRes.json()
 
-      // 3. Create version
+      // 4. Create version
       const versionRes = await fetch('/api/versions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -178,45 +222,66 @@ export default function CreateModPage() {
           changelog,
           status: releaseType,
           game_versions: selectedVersions,
-          loaders: selectedLoaders
+          loaders: isResourcePack ? [] : selectedLoaders
         })
       })
       
-      if (!versionRes.ok) throw new Error('Failed to create version')
+      if (!versionRes.ok) {
+        const error = await versionRes.json()
+        throw new Error(error.error || 'Failed to create version')
+      }
       const version = await versionRes.json()
 
-      // 4. Upload mod file
-      const fileFormData = new FormData()
-      fileFormData.append('file', modFile)
-      const fileUploadRes = await fetch('/api/upload', {
-        method: 'POST',
-        body: fileFormData
-      })
-      
-      if (!fileUploadRes.ok) throw new Error('Failed to upload file')
-      const uploadedFile = await fileUploadRes.json()
-
-      // 5. Create file record
-      await fetch('/api/files', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          version_id: version.id,
-          filename: modFile.name,
-          file_size: modFile.size,
-          file_type: modFile.type || 'application/java-archive',
-          blob_pathname: uploadedFile.pathname
+      // 5. Handle file - either upload or external URL
+      if (downloadType === 'upload' && modFile) {
+        const fileFormData = new FormData()
+        fileFormData.append('file', modFile)
+        const fileUploadRes = await fetch('/api/upload', {
+          method: 'POST',
+          body: fileFormData
         })
-      })
+        
+        if (!fileUploadRes.ok) throw new Error('Failed to upload file')
+        const uploadedFile = await fileUploadRes.json()
+
+        // Create file record with blob pathname
+        await fetch('/api/files', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            version_id: version.id,
+            filename: modFile.name,
+            file_size: modFile.size,
+            file_type: modFile.type || 'application/java-archive',
+            blob_pathname: uploadedFile.pathname
+          })
+        })
+      } else if (downloadType === 'link' && externalUrl) {
+        // Create file record with external URL
+        await fetch('/api/files', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            version_id: version.id,
+            filename: title + (isResourcePack ? '.zip' : '.jar'),
+            file_size: 0,
+            file_type: isResourcePack ? 'application/zip' : 'application/java-archive',
+            external_url: externalUrl
+          })
+        })
+      }
 
       router.push(`/mods/${slug}`)
     } catch (error) {
-      console.error('Error creating mod:', error)
-      alert(error instanceof Error ? error.message : 'Failed to create mod')
+      console.error('Error creating project:', error)
+      alert(error instanceof Error ? error.message : 'Failed to create project')
     } finally {
       setIsSubmitting(false)
     }
   }
+
+  const canProceedStep2 = selectedVersions.length > 0 && (isResourcePack || selectedLoaders.length > 0)
+  const canSubmit = downloadType === 'upload' ? !!modFile : !!externalUrl
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -262,6 +327,29 @@ export default function CreateModPage() {
                   <p className="text-muted-foreground">Start by providing basic information about your mod or resource pack.</p>
                 </div>
 
+                {/* Banner Upload */}
+                <div>
+                  <Label className="mb-2 block">Project Banner (Optional)</Label>
+                  <label className="group cursor-pointer block">
+                    <div className={`
+                      w-full h-[160px] rounded-xl border-2 border-dashed
+                      flex items-center justify-center overflow-hidden
+                      transition-all duration-300 hover:border-primary hover:bg-primary/5
+                      ${bannerPreview ? 'border-primary' : 'border-border'}
+                    `}>
+                      {bannerPreview ? (
+                        <img src={bannerPreview} alt="Banner preview" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="text-center p-4">
+                          <ImageIcon className="w-10 h-10 mx-auto text-muted-foreground mb-2 group-hover:text-primary transition-colors" />
+                          <span className="text-sm text-muted-foreground">Upload a banner image (1200x400 recommended)</span>
+                        </div>
+                      )}
+                    </div>
+                    <input type="file" accept="image/*" onChange={handleBannerChange} className="hidden" />
+                  </label>
+                </div>
+
                 <div className="grid gap-6 md:grid-cols-[200px_1fr]">
                   {/* Icon Upload */}
                   <div>
@@ -300,7 +388,7 @@ export default function CreateModPage() {
                     </div>
 
                     <div>
-                      <Label htmlFor="category">Category</Label>
+                      <Label htmlFor="category">Category *</Label>
                       <select
                         id="category"
                         value={categoryId}
@@ -343,7 +431,7 @@ export default function CreateModPage() {
                 <div className="flex justify-end">
                   <Button 
                     onClick={() => setStep(2)} 
-                    disabled={!title || !description}
+                    disabled={!title || !description || !categoryId}
                     className="px-8 h-12 text-base transition-all duration-200 hover:scale-105"
                   >
                     Continue
@@ -357,7 +445,7 @@ export default function CreateModPage() {
               <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                 <div>
                   <h2 className="text-2xl font-bold text-foreground mb-2">Version & Compatibility</h2>
-                  <p className="text-muted-foreground">Specify the version number and supported game versions/loaders.</p>
+                  <p className="text-muted-foreground">Specify the version number and supported game versions{!isResourcePack && '/loaders'}.</p>
                 </div>
 
                 <div className="grid gap-6 md:grid-cols-2">
@@ -464,69 +552,77 @@ export default function CreateModPage() {
                   )}
                 </div>
 
-                {/* Mod Loaders Selector */}
-                <div>
-                  <Label>Supported Mod Loaders *</Label>
-                  <div className="mt-1.5 relative">
-                    <button
-                      type="button"
-                      onClick={() => setShowLoaderDropdown(!showLoaderDropdown)}
-                      className="w-full h-12 px-4 rounded-lg border border-input bg-background text-left flex items-center justify-between transition-all duration-200 hover:border-primary"
-                    >
-                      <span className={selectedLoaders.length ? 'text-foreground' : 'text-muted-foreground'}>
-                        {selectedLoaders.length 
-                          ? `${selectedLoaders.length} loader${selectedLoaders.length > 1 ? 's' : ''} selected`
-                          : 'Select mod loaders'
-                        }
-                      </span>
-                      <ChevronDown className={`w-5 h-5 transition-transform duration-200 ${showLoaderDropdown ? 'rotate-180' : ''}`} />
-                    </button>
+                {/* Mod Loaders Selector - only show if not resource pack */}
+                {!isResourcePack && (
+                  <div>
+                    <Label>Supported Mod Loaders *</Label>
+                    <div className="mt-1.5 relative">
+                      <button
+                        type="button"
+                        onClick={() => setShowLoaderDropdown(!showLoaderDropdown)}
+                        className="w-full h-12 px-4 rounded-lg border border-input bg-background text-left flex items-center justify-between transition-all duration-200 hover:border-primary"
+                      >
+                        <span className={selectedLoaders.length ? 'text-foreground' : 'text-muted-foreground'}>
+                          {selectedLoaders.length 
+                            ? `${selectedLoaders.length} loader${selectedLoaders.length > 1 ? 's' : ''} selected`
+                            : 'Select mod loaders'
+                          }
+                        </span>
+                        <ChevronDown className={`w-5 h-5 transition-transform duration-200 ${showLoaderDropdown ? 'rotate-180' : ''}`} />
+                      </button>
+                      
+                      {showLoaderDropdown && (
+                        <div className="absolute z-20 mt-2 w-full bg-popover border border-border rounded-lg shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                          {modLoaders.map((l) => (
+                            <button
+                              key={l.id}
+                              type="button"
+                              onClick={() => toggleLoader(l.slug)}
+                              className={`
+                                w-full px-4 py-2.5 text-left flex items-center gap-3 transition-colors
+                                hover:bg-accent
+                                ${selectedLoaders.includes(l.slug) ? 'bg-primary/10' : ''}
+                              `}
+                            >
+                              <div className={`
+                                w-5 h-5 rounded border-2 flex items-center justify-center transition-all
+                                ${selectedLoaders.includes(l.slug) 
+                                  ? 'bg-primary border-primary' 
+                                  : 'border-muted-foreground'
+                                }
+                              `}>
+                                {selectedLoaders.includes(l.slug) && <Check className="w-3 h-3 text-primary-foreground" />}
+                              </div>
+                              <span>{l.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     
-                    {showLoaderDropdown && (
-                      <div className="absolute z-20 mt-2 w-full bg-popover border border-border rounded-lg shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
-                        {modLoaders.map((l) => (
-                          <button
-                            key={l.id}
-                            type="button"
-                            onClick={() => toggleLoader(l.slug)}
-                            className={`
-                              w-full px-4 py-2.5 text-left flex items-center gap-3 transition-colors
-                              hover:bg-accent
-                              ${selectedLoaders.includes(l.slug) ? 'bg-primary/10' : ''}
-                            `}
+                    {selectedLoaders.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {selectedLoaders.map((l) => (
+                          <span
+                            key={l}
+                            className="inline-flex items-center gap-1 px-3 py-1 bg-accent text-accent-foreground rounded-full text-sm capitalize animate-in fade-in zoom-in duration-200"
                           >
-                            <div className={`
-                              w-5 h-5 rounded border-2 flex items-center justify-center transition-all
-                              ${selectedLoaders.includes(l.slug) 
-                                ? 'bg-primary border-primary' 
-                                : 'border-muted-foreground'
-                              }
-                            `}>
-                              {selectedLoaders.includes(l.slug) && <Check className="w-3 h-3 text-primary-foreground" />}
-                            </div>
-                            <span>{l.name}</span>
-                          </button>
+                            {modLoaders.find(loader => loader.slug === l)?.name || l}
+                            <button onClick={() => toggleLoader(l)} className="hover:text-accent-foreground/70">
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
                         ))}
                       </div>
                     )}
                   </div>
-                  
-                  {selectedLoaders.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {selectedLoaders.map((l) => (
-                        <span
-                          key={l}
-                          className="inline-flex items-center gap-1 px-3 py-1 bg-accent text-accent-foreground rounded-full text-sm capitalize animate-in fade-in zoom-in duration-200"
-                        >
-                          {modLoaders.find(ml => ml.slug === l)?.name || l}
-                          <button onClick={() => toggleLoader(l)} className="hover:text-accent-foreground/70">
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                )}
+
+                {isResourcePack && (
+                  <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
+                    <p className="text-sm text-primary">Resource packs are compatible with all Minecraft clients - no mod loader required!</p>
+                  </div>
+                )}
 
                 <div>
                   <Label htmlFor="changelog">Changelog</Label>
@@ -541,12 +637,16 @@ export default function CreateModPage() {
                 </div>
 
                 <div className="flex justify-between">
-                  <Button variant="outline" onClick={() => setStep(1)} className="px-8 h-12">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setStep(1)}
+                    className="px-6 h-12 transition-all duration-200 hover:scale-105"
+                  >
                     Back
                   </Button>
                   <Button 
                     onClick={() => setStep(3)} 
-                    disabled={!versionNumber || selectedVersions.length === 0 || selectedLoaders.length === 0}
+                    disabled={!canProceedStep2}
                     className="px-8 h-12 text-base transition-all duration-200 hover:scale-105"
                   >
                     Continue
@@ -555,118 +655,158 @@ export default function CreateModPage() {
               </div>
             )}
 
-            {/* Step 3: File Upload */}
+            {/* Step 3: File Upload or External Link */}
             {step === 3 && (
               <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                 <div>
                   <h2 className="text-2xl font-bold text-foreground mb-2">Upload Your File</h2>
-                  <p className="text-muted-foreground">Upload your mod .jar file or resource pack .zip file.</p>
+                  <p className="text-muted-foreground">Upload your file directly or provide an external download link.</p>
                 </div>
 
-                {/* Drag & Drop Zone */}
-                <div
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  className={`
-                    relative border-2 border-dashed rounded-xl p-12 text-center
-                    transition-all duration-300 transform
-                    ${isDragging 
-                      ? 'border-primary bg-primary/10 scale-[1.02]' 
-                      : modFile 
-                        ? 'border-green-500 bg-green-500/10' 
-                        : 'border-border hover:border-primary/50 hover:bg-primary/5'
-                    }
-                  `}
-                >
-                  {modFile ? (
-                    <div className="animate-in fade-in zoom-in duration-300">
-                      <FileArchive className="w-16 h-16 mx-auto text-green-500 mb-4" />
-                      <p className="text-lg font-semibold text-foreground">{modFile.name}</p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {(modFile.size / 1024 / 1024).toFixed(2)} MB
-                      </p>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setModFile(null)}
-                        className="mt-4 text-muted-foreground hover:text-destructive"
-                      >
-                        <X className="w-4 h-4 mr-1" /> Remove
-                      </Button>
-                    </div>
-                  ) : (
-                    <div>
-                      <Upload className={`w-16 h-16 mx-auto mb-4 transition-colors ${isDragging ? 'text-primary' : 'text-muted-foreground'}`} />
-                      <p className="text-lg font-semibold text-foreground mb-2">
-                        Drag & drop your file here
-                      </p>
-                      <p className="text-sm text-muted-foreground mb-4">
-                        or click to browse
-                      </p>
-                      <label>
-                        <Button variant="outline" className="cursor-pointer" asChild>
-                          <span>
-                            <Upload className="w-4 h-4 mr-2" />
-                            Browse Files
-                          </span>
+                {/* Download Type Toggle */}
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => setDownloadType('upload')}
+                    className={`
+                      flex-1 p-4 rounded-xl border-2 flex flex-col items-center gap-2
+                      transition-all duration-300 transform hover:scale-[1.02]
+                      ${downloadType === 'upload' 
+                        ? 'border-primary bg-primary/10' 
+                        : 'border-border hover:border-primary/50'
+                      }
+                    `}
+                  >
+                    <Upload className={`w-8 h-8 ${downloadType === 'upload' ? 'text-primary' : 'text-muted-foreground'}`} />
+                    <span className={`font-medium ${downloadType === 'upload' ? 'text-primary' : 'text-foreground'}`}>
+                      Upload File
+                    </span>
+                    <span className="text-xs text-muted-foreground text-center">
+                      Upload directly to our servers
+                    </span>
+                  </button>
+                  
+                  <button
+                    onClick={() => setDownloadType('link')}
+                    className={`
+                      flex-1 p-4 rounded-xl border-2 flex flex-col items-center gap-2
+                      transition-all duration-300 transform hover:scale-[1.02]
+                      ${downloadType === 'link' 
+                        ? 'border-primary bg-primary/10' 
+                        : 'border-border hover:border-primary/50'
+                      }
+                    `}
+                  >
+                    <LinkIcon className={`w-8 h-8 ${downloadType === 'link' ? 'text-primary' : 'text-muted-foreground'}`} />
+                    <span className={`font-medium ${downloadType === 'link' ? 'text-primary' : 'text-foreground'}`}>
+                      External Link
+                    </span>
+                    <span className="text-xs text-muted-foreground text-center">
+                      Link to an external download
+                    </span>
+                  </button>
+                </div>
+
+                {downloadType === 'upload' ? (
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    className={`
+                      border-2 border-dashed rounded-xl p-12 text-center
+                      transition-all duration-300 transform
+                      ${isDragging 
+                        ? 'border-primary bg-primary/10 scale-[1.02]' 
+                        : modFile 
+                          ? 'border-primary bg-primary/5' 
+                          : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                      }
+                    `}
+                  >
+                    {modFile ? (
+                      <div className="flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-300">
+                        <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center">
+                          <FileArchive className="w-8 h-8 text-primary" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-foreground">{modFile.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {(modFile.size / 1024 / 1024).toFixed(2)} MB
+                          </p>
+                        </div>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => setModFile(null)}
+                          className="transition-all duration-200 hover:scale-105"
+                        >
+                          <X className="w-4 h-4 mr-2" />
+                          Remove
                         </Button>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="w-16 h-16 rounded-full bg-muted mx-auto flex items-center justify-center">
+                          <Upload className="w-8 h-8 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground">Drag and drop your file here</p>
+                          <p className="text-sm text-muted-foreground">or click to browse</p>
+                        </div>
                         <input
                           type="file"
                           accept=".jar,.zip"
-                          onChange={(e) => e.target.files?.[0] && setModFile(e.target.files[0])}
+                          onChange={(e) => setModFile(e.target.files?.[0] || null)}
                           className="hidden"
+                          id="modFile"
                         />
-                      </label>
-                      <p className="text-xs text-muted-foreground mt-4">
-                        Supported formats: .jar, .zip (Max 100MB)
+                        <label htmlFor="modFile">
+                          <Button variant="outline" className="cursor-pointer transition-all duration-200 hover:scale-105" asChild>
+                            <span>Browse Files</span>
+                          </Button>
+                        </label>
+                        <p className="text-xs text-muted-foreground">Supported formats: .jar, .zip</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="externalUrl">Download URL *</Label>
+                      <Input
+                        id="externalUrl"
+                        type="url"
+                        value={externalUrl}
+                        onChange={(e) => setExternalUrl(e.target.value)}
+                        placeholder="https://example.com/mymod.jar"
+                        className="mt-1.5 h-12 transition-all duration-200 focus:ring-2 focus:ring-primary/20"
+                      />
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Enter a direct download link to your file (Mediafire, Google Drive, Dropbox, etc.)
                       </p>
                     </div>
-                  )}
-                </div>
-
-                {/* Summary */}
-                <div className="bg-muted/50 rounded-xl p-6 space-y-3">
-                  <h3 className="font-semibold text-foreground">Summary</h3>
-                  <div className="grid gap-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Project</span>
-                      <span className="font-medium text-foreground">{title}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Version</span>
-                      <span className="font-medium text-foreground">{versionNumber}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Game Versions</span>
-                      <span className="font-medium text-foreground">{selectedVersions.join(', ')}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Loaders</span>
-                      <span className="font-medium text-foreground capitalize">{selectedLoaders.join(', ')}</span>
-                    </div>
                   </div>
-                </div>
+                )}
 
-                <div className="flex justify-between">
-                  <Button variant="outline" onClick={() => setStep(2)} className="px-8 h-12">
+                <div className="flex justify-between pt-4">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setStep(2)}
+                    className="px-6 h-12 transition-all duration-200 hover:scale-105"
+                  >
                     Back
                   </Button>
                   <Button 
                     onClick={handleSubmit}
-                    disabled={!modFile || isSubmitting}
+                    disabled={isSubmitting || !canSubmit}
                     className="px-8 h-12 text-base transition-all duration-200 hover:scale-105"
                   >
                     {isSubmitting ? (
                       <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Publishing...
+                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                        Creating Project...
                       </>
                     ) : (
-                      <>
-                        <Upload className="w-4 h-4 mr-2" />
-                        Publish Project
-                      </>
+                      'Create Project'
                     )}
                   </Button>
                 </div>
