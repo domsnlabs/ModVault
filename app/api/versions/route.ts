@@ -12,9 +12,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { modId, version_number, changelog, status } = await request.json()
+    const { mod_id, version_number, changelog, status, game_versions, loaders } = await request.json()
 
-    if (!modId || !version_number) {
+    if (!mod_id || !version_number) {
       return NextResponse.json(
         { error: 'Mod ID and version number are required' },
         { status: 400 }
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     const { data: mod, error: modError } = await supabase
       .from('mods')
       .select('id')
-      .eq('id', modId)
+      .eq('id', mod_id)
       .eq('user_id', user.id)
       .single()
 
@@ -39,10 +39,12 @@ export async function POST(request: NextRequest) {
     const { data: version, error } = await supabase
       .from('mod_versions')
       .insert({
-        mod_id: modId,
+        mod_id,
         version_number,
         changelog,
         status: status || 'release',
+        game_versions: game_versions || [],
+        loaders: loaders || [],
       })
       .select()
       .single()

@@ -93,10 +93,10 @@ importers:
         specifier: 1.2.8
         version: 1.2.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@supabase/ssr':
-        specifier: 0.6.1
-        version: 0.6.1(@supabase/supabase-js@2.49.4)
+        specifier: ^0.5.2
+        version: 0.5.2(@supabase/supabase-js@2.49.4)
       '@supabase/supabase-js':
-        specifier: 2.49.4
+        specifier: ^2.47.10
         version: 2.49.4
       '@vercel/analytics':
         specifier: 1.6.1
@@ -1122,8 +1122,8 @@ packages:
   '@supabase/realtime-js@2.11.2':
     resolution: {integrity: sha512-u/XeuL2Y0QEhXSoIPZZwR6wMXgB+RQbJzG9VErA3VghVt7uRfSVsjeqd7m5GhX3JR6dM/WRmLbVR8URpDWG4+w==}
 
-  '@supabase/ssr@0.6.1':
-    resolution: {integrity: sha512-QtQgEMvaDzr77Mk3vZ3jWg2/y+D8tExYF7vcJT+wQ8ysuvOeGGjYbZlvj5bHYsj/SpC0bihcisnwPrM4Gp5G4g==}
+  '@supabase/ssr@0.5.2':
+    resolution: {integrity: sha512-n3plRhr2Bs8Xun1o4S3k1CDv17iH5QY9YcoEvXX3bxV1/5XSasA0mNXYycFmADIdtdE6BG9MRjP5CGIs8qxC8A==}
     peerDependencies:
       '@supabase/supabase-js': ^2.43.4
 
@@ -1227,6 +1227,9 @@ packages:
 
   '@tailwindcss/postcss@4.2.2':
     resolution: {integrity: sha512-n4goKQbW8RVXIbNKRB/45LzyUqN451deQK0nzIeauVEqjlI49slUlgKYJM2QyUzap/PcpnS7kzSUmPb1sCRvYQ==}
+
+  '@types/cookie@0.6.0':
+    resolution: {integrity: sha512-4Kh9a6B2bQciAhf7FSuMRRkUWecJgJu9nPnx3yzpsfXX/c50REIqpHY4C82bXP90qrLtXtkDxTZosYO3UpOwlA==}
 
   '@types/d3-array@3.2.2':
     resolution: {integrity: sha512-hOLWVbm7uRza0BYXpIIW5pxfrKe0W+D5lrFiAEYR+pb6w3N2SwSMaJbXdUfSEv+dT4MfHBLtn5js0LAWaO6otw==}
@@ -1345,9 +1348,9 @@ packages:
       react: ^18 || ^19 || ^19.0.0-rc
       react-dom: ^18 || ^19 || ^19.0.0-rc
 
-  cookie@1.1.1:
-    resolution: {integrity: sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ==}
-    engines: {node: '>=18'}
+  cookie@0.7.2:
+    resolution: {integrity: sha512-yki5XnKuf750l50uGTllt6kKILY4nQ1eNIQatoXEByZ5dWgnKqbnqmTrBE5B4N7lrMJKQ2ytWMiTO2o0v6Ew/w==}
+    engines: {node: '>= 0.6'}
 
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
@@ -2745,10 +2748,11 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  '@supabase/ssr@0.6.1(@supabase/supabase-js@2.49.4)':
+  '@supabase/ssr@0.5.2(@supabase/supabase-js@2.49.4)':
     dependencies:
       '@supabase/supabase-js': 2.49.4
-      cookie: 1.1.1
+      '@types/cookie': 0.6.0
+      cookie: 0.7.2
 
   '@supabase/storage-js@2.7.1':
     dependencies:
@@ -2838,6 +2842,8 @@ snapshots:
       '@tailwindcss/oxide': 4.2.2
       postcss: 8.5.8
       tailwindcss: 4.2.2
+
+  '@types/cookie@0.6.0': {}
 
   '@types/d3-array@3.2.2': {}
 
@@ -2943,7 +2949,7 @@ snapshots:
       - '@types/react'
       - '@types/react-dom'
 
-  cookie@1.1.1: {}
+  cookie@0.7.2: {}
 
   csstype@3.2.3: {}
 

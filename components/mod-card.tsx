@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Download, Heart, Package, Palette, Sparkles, Box, Database, Plug } from 'lucide-react'
+import { Download, Heart, Package, Palette, Sparkles, Box, Database, Plug, Star } from 'lucide-react'
 import type { Mod } from '@/lib/types'
 
 const categoryIcons: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -26,9 +26,10 @@ function formatNumber(num: number): string {
 
 interface ModCardProps {
   mod: Mod
+  index?: number
 }
 
-export function ModCard({ mod }: ModCardProps) {
+export function ModCard({ mod, index = 0 }: ModCardProps) {
   const CategoryIcon = mod.categories?.icon 
     ? categoryIcons[mod.categories.icon] || Package 
     : Package
@@ -39,26 +40,32 @@ export function ModCard({ mod }: ModCardProps) {
 
   return (
     <Link href={`/mods/${mod.slug}`}>
-      <Card className="group h-full overflow-hidden border-border bg-card transition-all hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5">
+      <Card 
+        className="group h-full overflow-hidden border-border bg-card transition-all duration-300 hover:border-primary/50 hover:shadow-xl hover:shadow-primary/10 hover:-translate-y-1 animate-in fade-in slide-in-from-bottom-4"
+        style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'both' }}
+      >
         {/* Header Image */}
-        <div className="relative aspect-[16/9] overflow-hidden bg-secondary">
+        <div className="relative aspect-[16/9] overflow-hidden bg-gradient-to-br from-secondary to-secondary/50">
           {mod.header_url ? (
             <img
               src={mod.header_url}
               alt={mod.title}
-              className="h-full w-full object-cover transition-transform group-hover:scale-105"
+              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center">
-              <CategoryIcon className="h-12 w-12 text-muted-foreground/50" />
+              <CategoryIcon className="h-12 w-12 text-muted-foreground/30 transition-all duration-300 group-hover:scale-110 group-hover:text-primary/50" />
             </div>
           )}
+          {/* Gradient overlay on hover */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+          
           {/* Icon overlay */}
-          <div className="absolute -bottom-6 left-4">
-            <div className="h-14 w-14 rounded-lg border-4 border-card bg-secondary p-2 shadow-lg">
+          <div className="absolute -bottom-6 left-4 z-10">
+            <div className="h-14 w-14 rounded-lg border-4 border-card bg-secondary p-2 shadow-lg transition-all duration-300 group-hover:shadow-xl group-hover:shadow-primary/20 group-hover:scale-105">
               {mod.icon_url ? (
                 <img
-                  src={mod.icon_url}
+                  src={`/api/file?pathname=${encodeURIComponent(mod.icon_url)}`}
                   alt=""
                   className="h-full w-full rounded object-cover"
                 />
@@ -67,18 +74,27 @@ export function ModCard({ mod }: ModCardProps) {
               )}
             </div>
           </div>
+          
+          {/* Category badge */}
+          {mod.categories && (
+            <div className="absolute top-3 right-3 opacity-0 translate-y-2 transition-all duration-300 group-hover:opacity-100 group-hover:translate-y-0">
+              <Badge variant="secondary" className="bg-black/60 backdrop-blur-sm text-white border-0">
+                {mod.categories.name}
+              </Badge>
+            </div>
+          )}
         </div>
 
         <CardContent className="pt-8 pb-4">
           {/* Title and Author */}
           <div className="mb-3">
-            <h3 className="line-clamp-1 text-lg font-semibold text-foreground group-hover:text-primary transition-colors">
+            <h3 className="line-clamp-1 text-lg font-semibold text-foreground transition-colors duration-200 group-hover:text-primary">
               {mod.title}
             </h3>
             <div className="mt-1 flex items-center gap-2">
               <span className="text-sm text-muted-foreground">by</span>
               <div className="flex items-center gap-1.5">
-                <Avatar className="h-5 w-5">
+                <Avatar className="h-5 w-5 transition-transform duration-200 group-hover:scale-110">
                   <AvatarImage src={mod.profiles?.avatar_url || undefined} />
                   <AvatarFallback className="text-xs bg-primary/20 text-primary">
                     {mod.profiles?.username?.charAt(0).toUpperCase() || 'U'}
@@ -99,42 +115,40 @@ export function ModCard({ mod }: ModCardProps) {
           {/* Footer Stats */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-1.5 text-muted-foreground">
+              <div className="flex items-center gap-1.5 text-muted-foreground transition-colors duration-200 group-hover:text-primary">
                 <Download className="h-4 w-4" />
-                <span className="text-sm">{formatNumber(mod.downloads_count)}</span>
+                <span className="text-sm font-medium">{formatNumber(mod.downloads_count)}</span>
               </div>
-              <div className="flex items-center gap-1.5 text-muted-foreground">
+              <div className="flex items-center gap-1.5 text-muted-foreground transition-colors duration-200 group-hover:text-red-400">
                 <Heart className="h-4 w-4" />
-                <span className="text-sm">{formatNumber(mod.follows_count)}</span>
+                <span className="text-sm font-medium">{formatNumber(mod.follows_count)}</span>
               </div>
             </div>
-            
-            {mod.categories && (
-              <Badge variant="secondary" className="text-xs">
-                {mod.categories.name}
-              </Badge>
+
+            {/* Rating Stars */}
+            {averageRating > 0 && (
+              <div className="flex items-center gap-1">
+                <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                <span className="text-sm font-medium text-foreground">
+                  {averageRating.toFixed(1)}
+                </span>
+              </div>
             )}
           </div>
 
-          {/* Rating Stars */}
-          {averageRating > 0 && (
-            <div className="mt-3 flex items-center gap-1">
-              {[1, 2, 3, 4, 5].map((star) => (
-                <svg
-                  key={star}
-                  className={`h-4 w-4 ${
-                    star <= Math.round(averageRating)
-                      ? 'fill-primary text-primary'
-                      : 'fill-muted text-muted'
-                  }`}
-                  viewBox="0 0 20 20"
-                >
-                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                </svg>
+          {/* Versions info - shows on hover */}
+          {(mod as any).mod_versions?.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5 opacity-0 translate-y-2 transition-all duration-300 group-hover:opacity-100 group-hover:translate-y-0">
+              {(mod as any).mod_versions[0]?.loaders?.slice(0, 2).map((loader: string) => (
+                <Badge key={loader} variant="outline" className="text-xs capitalize">
+                  {loader}
+                </Badge>
               ))}
-              <span className="ml-1 text-xs text-muted-foreground">
-                ({mod.reviews?.length || 0})
-              </span>
+              {(mod as any).mod_versions[0]?.game_versions?.slice(0, 2).map((version: string) => (
+                <Badge key={version} variant="outline" className="text-xs bg-primary/10 border-primary/20">
+                  {version}
+                </Badge>
+              ))}
             </div>
           )}
         </CardContent>
@@ -146,7 +160,7 @@ export function ModCard({ mod }: ModCardProps) {
 export function ModCardSkeleton() {
   return (
     <Card className="h-full overflow-hidden border-border bg-card">
-      <div className="aspect-[16/9] animate-pulse bg-secondary" />
+      <div className="aspect-[16/9] animate-pulse bg-gradient-to-br from-secondary to-secondary/50" />
       <CardContent className="pt-8 pb-4">
         <div className="mb-3">
           <div className="h-6 w-3/4 animate-pulse rounded bg-secondary" />

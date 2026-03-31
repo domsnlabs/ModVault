@@ -12,37 +12,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { versionId, modId } = await request.json()
+    const { version_id, filename, file_size, file_type, blob_pathname } = await request.json()
 
-    if (!versionId || !modId) {
+    if (!version_id || !filename || !blob_pathname) {
       return NextResponse.json(
-        { error: 'Version ID and Mod ID are required' },
+        { error: 'Version ID, filename, and blob_pathname are required' },
         { status: 400 }
       )
     }
 
-    // Verify user owns this mod
-    const { data: mod, error: modError } = await supabase
-      .from('mods')
-      .select('id')
-      .eq('id', modId)
-      .eq('user_id', user.id)
+    // Get the mod from the version to verify ownership
+    const { data: version, error: versionError } = await supabase
+      .from('mod_versions')
+      .select('mod_id, mods!inner(user_id)')
+      .eq('id', version_id)
       .single()
 
-    if (modError || !mod) {
+    if (versionError || !version) {
       return NextResponse.json(
-        { error: 'Mod not found or unauthorized' },
+        { error: 'Version not found' },
         { status: 404 }
       )
     }
 
-    const formData = await request.formData()
-    const file = formData.get('file') as File
-
-    if (!file) {
+    if ((version as any).mods.user_id !== user.id) {
       return NextResponse.json(
-        { error: 'No file provided' },
-        { status: 400 }
+        { error: 'Unauthorized' },
+        { status: 401 }
       )
     }
 
@@ -50,11 +46,11 @@ export async function POST(request: NextRequest) {
     const { data: fileRecord, error: fileError } = await supabase
       .from('mod_files')
       .insert({
-        version_id: versionId,
-        filename: file.name,
-        file_size: file.size,
-        file_type: file.type,
-        blob_pathname: `mods/${modId}/${versionId}/${file.name}`,
+        version_id,
+        filename,
+        file_size: file_size || 0,
+        file_type: file_type || 'application/octet-stream',
+        blob_pathname,
       })
       .select()
       .single()
@@ -68,5 +64,48 @@ export async function POST(request: NextRequest) {
       { error: 'Failed to register file' },
       { status: 500 }
     )
+  }
+}
+
+// PATCH - increment download count
+export async function PATCH(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const fileId = searchParams.get('file_id')
+    
+    if (!fileId) {
+      return NextResponse.json({ error: 'File ID required' }, { status: 400 })
+    }
+    
+    const supabase = await createClient()
+    
+    // Get the file to find its mod
+    const { data: file, error: fileError } = await supabase
+      .from('mod_files')
+      .select('version_id, mod_versions!inner(mod_id)')
+      .eq('id', fileId)
+      .single()
+    
+    if (fileError || !file) {
+      return NextResponse.json({ error: 'File not found' }, { status: 404 })
+    }
+    
+    // Increment the mod's download count
+    const { error: updateError } = await supabase.rpc('increment_downloads', {
+      mod_id_param: (file as any).mod_versions.mod_id
+    })
+    
+    if (updateError) {
+      // Fallback if RPC doesn't exist - just update directly
+      await supabase
+        .from('mods')
+        .update({ downloads_count: supabase.raw('downloads_count + 1') } as any)
+        .eq('id', (file as any).mod_versions.mod_id)
+    }
+    
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Error incrementing download:', error)
+    return NextResponse.json({ error: 'Failed to track download' }, { status: 500 })
   }
 }
